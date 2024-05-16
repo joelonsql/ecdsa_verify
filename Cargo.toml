@@ -9,7 +9,7 @@ license = "MIT"
 repository = "https://github.com/joelonsql/ecdsa_verify"
 documentation = "https://docs.rs/ecdsa_verify"
 readme = "README.md"
-categories = ["cryptography", "database", "postgresql"]
+categories = ["cryptography", "database"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
