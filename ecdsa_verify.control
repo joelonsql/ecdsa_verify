@@ -1,0 +1,5 @@
+comment = 'ecdsa_verify:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/ecdsa_verify'
+relocatable = false
+superuser = true
