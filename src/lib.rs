@@ -3,45 +3,46 @@
 //! This code is based on v2.2.0 of the [starkbank-ecdsa] Python library
 //! developed by Star Bank [Star Bank].
 //!
-//! The [`ecdsa_verify`](fn.ecdsa_verify.html) function signature is the same as
-//! the PostgreSQL extension [pg-ecdsa] written in C, allowing this crate to be
-//! a compatible drop-in replacement when Rust is desired instead of C.
-//!
 //! [starkbank-ecdsa]: https://github.com/starkbank/ecdsa-python/commit/9acdc661b7acde453b9bd6b20c57b88d5a3bf7e3
 //! [Star Bank]: https://starkbank.com/
-//! [pg-ecdsa]: https://github.com/ameensol/pg-ecdsa
-use pgrx::prelude::*;
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
-use sha2::{Digest, Sha256};
 
-pgrx::pg_module_magic!();
-
+/// A struct representing a point in 3D space for elliptic curve operations.
 #[derive(Debug, Clone, PartialEq)]
-struct Point3D {
-    x: BigInt,
-    y: BigInt,
-    z: BigInt,
+pub struct Point3D {
+    /// The x-coordinate of the point.
+    pub x: BigInt,
+    /// The y-coordinate of the point.
+    pub y: BigInt,
+    /// The z-coordinate of the point.
+    pub z: BigInt,
 }
 
+/// A struct representing an ECDSA signature with r and s components.
 #[derive(Debug, Clone, PartialEq)]
-struct EcdsaSignature {
-    r: BigInt,
-    s: BigInt,
+pub struct EcdsaSignature {
+    /// The r component of the signature.
+    pub r: BigInt,
+    /// The s component of the signature.
+    pub s: BigInt,
 }
 
+/// A struct representing the parameters of an elliptic curve used in ECDSA.
 #[derive(Debug, Clone)]
-struct EcdsaCurve {
-    prime: BigInt,
-    a: BigInt,
-    b: BigInt,
-    g_x: BigInt,
-    g_y: BigInt,
-    n: BigInt,
-}
-
-fn number_from_byte_string(bytes: &[u8]) -> BigInt {
-    BigInt::from_bytes_be(num_bigint::Sign::Plus, bytes)
+pub struct EcdsaCurve {
+    /// The prime number defining the finite field of the curve.
+    pub prime: BigInt,
+    /// The a coefficient in the elliptic curve equation.
+    pub a: BigInt,
+    /// The b coefficient in the elliptic curve equation.
+    pub b: BigInt,
+    /// The x-coordinate of the generator point.
+    pub g_x: BigInt,
+    /// The y-coordinate of the generator point.
+    pub g_y: BigInt,
+    /// The order of the curve.
+    pub n: BigInt,
 }
 
 fn to_jacobian(p: &Point3D) -> Point3D {
@@ -173,13 +174,46 @@ fn contains(p: &Point3D, a: &BigInt, b: &BigInt, prime: &BigInt) -> bool {
     (&p.y * &p.y - (&p.x * &p.x * &p.x + a * &p.x + b)) % prime == BigInt::zero()
 }
 
-fn verify(
+/// Verifies an ECDSA signature against a given message hash and public key.
+///
+/// # Arguments
+///
+/// * `message_hash` - A byte slice representing the hash of the message to verify.
+/// * `sig` - A reference to an `EcdsaSignature` containing the r and s values of the signature.
+/// * `public_key` - A reference to a `Point3D` representing the public key.
+/// * `curve` - A reference to an `EcdsaCurve` containing the elliptic curve parameters.
+///
+/// # Returns
+///
+/// * `bool` - `true` if the signature is valid, `false` otherwise.
+///
+/// # Examples
+///
+/// ```
+/// use ecdsa_verify::{verify, Point3D, EcdsaSignature, secp256r1};
+/// use num_bigint::BigInt;
+/// use num_traits::Zero;
+///
+/// let message_hash = hex::decode("48c08394455a5007945a9025c58be18f1795db8a6f8c12e70a00c1cdd6d3df78").unwrap();
+/// let sig = EcdsaSignature {
+///     r: BigInt::parse_bytes(b"7679932563960414347091205306595575529033945270189659289643076129390605281494", 10).unwrap(),
+///     s: BigInt::parse_bytes(b"47844299635965077418200610260443789525430653377570372618360888620298576429143", 10).unwrap(),
+/// };
+/// let public_key = Point3D {
+///     x: BigInt::parse_bytes(b"57742645121064378973436687487225580113493928349340781038880342836084265852815", 10).unwrap(),
+///     y: BigInt::parse_bytes(b"99327750397910171089097863507426920114029443958399733106031194020330646322282", 10).unwrap(),
+///     z: BigInt::zero(),
+/// };
+/// let curve = secp256r1();
+/// assert!(verify(&message_hash, &sig, &public_key, &curve));
+/// ```
+pub fn verify(
     message_hash: &[u8],
-    sig: EcdsaSignature,
-    public_key: Point3D,
-    curve: EcdsaCurve,
+    sig: &EcdsaSignature,
+    public_key: &Point3D,
+    curve: &EcdsaCurve,
 ) -> bool {
-    let number_message = number_from_byte_string(message_hash);
+    let number_message = BigInt::from_bytes_be(num_bigint::Sign::Plus, message_hash);
     if !contains(&public_key, &curve.a, &curve.b, &curve.prime) {
         return false;
     }
@@ -226,78 +260,12 @@ fn verify(
     v.x % &curve.n == sig.r
 }
 
-/// Verifies an ECDSA signature for a given input data using a specified curve and hash function.
-///
-/// # Arguments
-///
-/// * `public_key` - The public key in bytes format.
-/// * `input_data` - The input data to verify.
-/// * `signature` - The signature in bytes format.
-/// * `hash_func` - The name of the hash function to use.
-/// * `curve_name` - The name of the elliptic curve to use.
-///
-/// Supported values for `hash_func`:
-/// - "sha256"
-///
-/// Supported values for `curve_name`:
-/// - "secp256r1"
-/// - "secp256k1"
+/// Returns the parameters for the secp256k1 elliptic curve.
 ///
 /// # Returns
 ///
-/// * `bool` - `true` if the signature is valid, `false` otherwise.
-///
-/// # Panics
-///
-/// * If an unsupported curve name or hash function is provided.
-///
-/// # Example
-///
-/// ```
-/// use ecdsa_verify::ecdsa_verify;
-///
-/// let public_key = hex::decode("7fa92dd0666eee7c13ddb7b6249b0c8f9fba4360857c4e15d2fc634a2b5a1f8fdb9983b319469d35e719a3b93e1ac292854cd3ff2ad50898681b0a32ffbcbc6a").unwrap();
-/// let input_data = hex::decode("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763010000000117bd119a942a38b92bfc3b90a21f7eaa37fe1a7fa0abe27fd15dd20683b14d54").unwrap();
-/// let signature = hex::decode("10fab01307f3eed59bc11601265efaab524b50d017bd9cdfeec4f61b01caa8d669c6e9f8d9bcbdba4e5478cb75b084332d51b0be2c21701b157c7c87abb98057").unwrap();
-/// let hash_func = "sha256";
-/// let curve_name = "secp256r1";
-///
-/// assert!(ecdsa_verify(&public_key, &input_data, &signature, hash_func, curve_name));
-/// ```
-#[pg_extern]
-pub fn ecdsa_verify(
-    public_key: &[u8],
-    input_data: &[u8],
-    signature: &[u8],
-    hash_func: &str,
-    curve_name: &str,
-) -> bool {
-    let curve = match curve_name {
-        "secp256r1" => secp256r1(),
-        "secp256k1" => secp256k1(),
-        _ => panic!("Unsupported curve: {}", curve_name),
-    };
-
-    let message_hash = match hash_func {
-        "sha256" => Sha256::digest(input_data).to_vec(),
-        _ => panic!("Unsupported hash function: {}", hash_func),
-    };
-
-    let sig = EcdsaSignature {
-        r: number_from_byte_string(&signature[..32]),
-        s: number_from_byte_string(&signature[32..]),
-    };
-
-    let public_key = Point3D {
-        x: number_from_byte_string(&public_key[..32]),
-        y: number_from_byte_string(&public_key[32..]),
-        z: BigInt::zero(),
-    };
-
-    verify(&message_hash, sig, public_key, curve)
-}
-
-fn secp256k1() -> EcdsaCurve {
+/// * `EcdsaCurve` - The secp256k1 curve parameters.
+pub fn secp256k1() -> EcdsaCurve {
     // The following parameters can be reproduced using the OpenSSL command:
     // openssl ecparam -genkey -name secp256k1 -param_enc explicit | \
     // openssl ec -noout -text
@@ -343,7 +311,12 @@ fn secp256k1() -> EcdsaCurve {
     }
 }
 
-fn secp256r1() -> EcdsaCurve {
+/// Returns the parameters for the secp256r1 elliptic curve.
+///
+/// # Returns
+///
+/// * `EcdsaCurve` - The secp256r1 curve parameters.
+pub fn secp256r1() -> EcdsaCurve {
     // The following parameters can be reproduced using the OpenSSL command:
     // openssl ecparam -genkey -name secp256r1 -param_enc explicit | \
     // openssl ec -noout -text
@@ -401,20 +374,12 @@ fn secp256r1() -> EcdsaCurve {
     }
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-#[pg_schema]
+#[cfg(test)]
 mod tests {
     use super::*;
     use num_bigint::BigInt;
-    use std::str::FromStr;
 
-    #[pg_test]
-    fn test_number_from_byte_string() {
-        let bytes = b"\x01\x02\x03";
-        assert_eq!(number_from_byte_string(bytes), BigInt::from(66051));
-    }
-
-    #[pg_test]
+    #[test]
     fn test_to_jacobian() {
         let p = Point3D {
             x: BigInt::from(2),
@@ -429,7 +394,7 @@ mod tests {
         assert_eq!(to_jacobian(&p), expected);
     }
 
-    #[pg_test]
+    #[test]
     fn test_from_jacobian() {
         let p = Point3D {
             x: BigInt::from(2),
@@ -445,7 +410,7 @@ mod tests {
         assert_eq!(from_jacobian(&p, &prime), expected);
     }
     
-    #[pg_test]
+    #[test]
     fn test_jacobian_double() {
         let p = Point3D {
             x: BigInt::from(2),
@@ -462,7 +427,7 @@ mod tests {
         assert_eq!(jacobian_double(&p, &a, &prime), expected);
     }
 
-    #[pg_test]
+    #[test]
     fn test_jacobian_add() {
         let p = Point3D {
             x: BigInt::from(2),
@@ -484,142 +449,106 @@ mod tests {
         assert_eq!(jacobian_add(&p, &q, &a, &prime), expected);
     }
 
-    #[pg_test]
+    #[test]
     fn test_multiply() {
         let p = Point3D {
-            x: BigInt::from_str("55066263022277343669578718895168534326250603453777594175500187360389116729240").unwrap(),
-            y: BigInt::from_str("32670510020758816978083085130507043184471273380659243275938904335757337482424").unwrap(),
+            x: BigInt::parse_bytes(b"55066263022277343669578718895168534326250603453777594175500187360389116729240", 10).unwrap(),
+            y: BigInt::parse_bytes(b"32670510020758816978083085130507043184471273380659243275938904335757337482424", 10).unwrap(),
             z: BigInt::zero(),
         };
-        let i = BigInt::from_str("76650304483176495741675648870262264680257041494540363405951857559263604352053").unwrap();
-        let n = BigInt::from_str("115792089237316195423570985008687907852837564279074904382605163141518161494337").unwrap();
+        let i = BigInt::parse_bytes(b"76650304483176495741675648870262264680257041494540363405951857559263604352053", 10).unwrap();
+        let n = BigInt::parse_bytes(b"115792089237316195423570985008687907852837564279074904382605163141518161494337", 10).unwrap();
         let a = BigInt::zero();
-        let prime = BigInt::from_str("115792089237316195423570985008687907853269984665640564039457584007908834671663").unwrap();
+        let prime = BigInt::parse_bytes(b"115792089237316195423570985008687907853269984665640564039457584007908834671663", 10).unwrap();
         let expected = Some(Point3D {
-            x: BigInt::from_str("85217781944227650815758470769803916518073404692604958778490580619436728646316").unwrap(),
-            y: BigInt::from_str("-52225341456763567064525879521783886427788861703590286785555970483835115400271").unwrap(),
+            x: BigInt::parse_bytes(b"85217781944227650815758470769803916518073404692604958778490580619436728646316", 10).unwrap(),
+            y: BigInt::parse_bytes(b"-52225341456763567064525879521783886427788861703590286785555970483835115400271", 10).unwrap(),
             z: BigInt::zero(),
         });
         assert_eq!(multiply(&p, &i, &n, &a, &prime), expected);
     }
 
-    #[pg_test]
+    #[test]
     fn test_add() {
         let p = Point3D {
-            x: BigInt::from_str("31403115364582379550907050631875140702418979177549974706941498652441512470458").unwrap(),
-            y: BigInt::from_str("101818303961377311447148617614805458780290001799451860481930108618473055802284").unwrap(),
+            x: BigInt::parse_bytes(b"31403115364582379550907050631875140702418979177549974706941498652441512470458", 10).unwrap(),
+            y: BigInt::parse_bytes(b"101818303961377311447148617614805458780290001799451860481930108618473055802284", 10).unwrap(),
             z: BigInt::zero(),
         };
         let q = Point3D {
-            x: BigInt::from_str("101690386697888660822536733613325166154267525726772224824634387558104511424840").unwrap(),
-            y: BigInt::from_str("-47036664861243869909569076480358479904318913594830847776653065859528326656316").unwrap(),
+            x: BigInt::parse_bytes(b"101690386697888660822536733613325166154267525726772224824634387558104511424840", 10).unwrap(),
+            y: BigInt::parse_bytes(b"-47036664861243869909569076480358479904318913594830847776653065859528326656316", 10).unwrap(),
             z: BigInt::zero(),
         };
-        let a = BigInt::from_str("115792089210356248762697446949407573530086143415290314195533631308867097853948").unwrap();
-        let prime = BigInt::from_str("115792089210356248762697446949407573530086143415290314195533631308867097853951").unwrap();
+        let a = BigInt::parse_bytes(b"115792089210356248762697446949407573530086143415290314195533631308867097853948", 10).unwrap();
+        let prime = BigInt::parse_bytes(b"115792089210356248762697446949407573530086143415290314195533631308867097853951", 10).unwrap();
         let expected = Some(Point3D {
-            x: BigInt::from_str("7679932563960414347091205306595575529033945270189659289643076129390605281494").unwrap(),
-            y: BigInt::from_str("-107375252532095138741597567516714532302943937430093290901277802845815571422141").unwrap(),
+            x: BigInt::parse_bytes(b"7679932563960414347091205306595575529033945270189659289643076129390605281494", 10).unwrap(),
+            y: BigInt::parse_bytes(b"-107375252532095138741597567516714532302943937430093290901277802845815571422141", 10).unwrap(),
             z: BigInt::zero(),
         });
         assert_eq!(add(&p, &q, &a, &prime), expected);
     }
 
-    #[pg_test]
+    #[test]
     fn test_contains() {
         let p = Point3D {
-            x: BigInt::from_str("115106164243905984849100475305234630054675646194978645692811434710714363667279").unwrap(),
-            y: BigInt::from_str("19706235080398884982913350654710526234719564240780022609690651720634760609570").unwrap(),
+            x: BigInt::parse_bytes(b"115106164243905984849100475305234630054675646194978645692811434710714363667279", 10).unwrap(),
+            y: BigInt::parse_bytes(b"19706235080398884982913350654710526234719564240780022609690651720634760609570", 10).unwrap(),
             z: BigInt::zero(),
         };
         let a = BigInt::zero();
         let b = BigInt::from(7);
-        let prime = BigInt::from_str("115792089237316195423570985008687907853269984665640564039457584007908834671663").unwrap();
+        let prime = BigInt::parse_bytes(b"115792089237316195423570985008687907853269984665640564039457584007908834671663", 10).unwrap();
         assert!(contains(&p, &a, &b, &prime));
     }
 
-    #[pg_test]
+    #[test]
     fn test_verify_secp256k1() {
         let message_hash = hex::decode("d94b9ba3e7dd18a7a265b4d619286c0615ccb24817bb6898578c160a0fec4baa").unwrap();
         let sig = EcdsaSignature {
-            r: BigInt::from_str("25620709521037740117758667172134018589525233359318772110869897469209888916545").unwrap(),
-            s: BigInt::from_str("113898187235606387790617275461401926013993175009609646753506476585129921911557").unwrap(),
+            r: BigInt::parse_bytes(b"25620709521037740117758667172134018589525233359318772110869897469209888916545", 10).unwrap(),
+            s: BigInt::parse_bytes(b"113898187235606387790617275461401926013993175009609646753506476585129921911557", 10).unwrap(),
         };
         let public_key = Point3D {
-            x: BigInt::from_str("115106164243905984849100475305234630054675646194978645692811434710714363667279").unwrap(),
-            y: BigInt::from_str("19706235080398884982913350654710526234719564240780022609690651720634760609570").unwrap(),
+            x: BigInt::parse_bytes(b"115106164243905984849100475305234630054675646194978645692811434710714363667279", 10).unwrap(),
+            y: BigInt::parse_bytes(b"19706235080398884982913350654710526234719564240780022609690651720634760609570", 10).unwrap(),
             z: BigInt::zero(),
         };
         let curve = secp256k1();
-        assert!(verify(&message_hash, sig, public_key, curve));
+        assert!(verify(&message_hash, &sig, &public_key, &curve));
     }
 
-    #[pg_test]
+    #[test]
     fn test_verify_secp256r1() {
         let message_hash = hex::decode("48c08394455a5007945a9025c58be18f1795db8a6f8c12e70a00c1cdd6d3df78").unwrap();
         let sig = EcdsaSignature {
-            r: BigInt::from_str("7679932563960414347091205306595575529033945270189659289643076129390605281494").unwrap(),
-            s: BigInt::from_str("47844299635965077418200610260443789525430653377570372618360888620298576429143").unwrap(),
+            r: BigInt::parse_bytes(b"7679932563960414347091205306595575529033945270189659289643076129390605281494", 10).unwrap(),
+            s: BigInt::parse_bytes(b"47844299635965077418200610260443789525430653377570372618360888620298576429143", 10).unwrap(),
         };
         let public_key = Point3D {
-            x: BigInt::from_str("57742645121064378973436687487225580113493928349340781038880342836084265852815").unwrap(),
-            y: BigInt::from_str("99327750397910171089097863507426920114029443958399733106031194020330646322282").unwrap(),
+            x: BigInt::parse_bytes(b"57742645121064378973436687487225580113493928349340781038880342836084265852815", 10).unwrap(),
+            y: BigInt::parse_bytes(b"99327750397910171089097863507426920114029443958399733106031194020330646322282", 10).unwrap(),
             z: BigInt::zero(),
         };
         let curve = secp256r1();
-        assert!(verify(&message_hash, sig, public_key, curve));
+        assert!(verify(&message_hash, &sig, &public_key, &curve));
     }
 
-    #[pg_test]
+    #[test]
     fn test_invalid_signature() {
         let message_hash = hex::decode("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef").unwrap();
         let sig = EcdsaSignature {
-            r: BigInt::from_str("1234567890123456789012345678901234567890123456789012345678901234567890123456").unwrap(),
-            s: BigInt::from_str("9876543210987654321098765432109876543210987654321098765432109876543210987654").unwrap(),
+            r: BigInt::parse_bytes(b"1234567890123456789012345678901234567890123456789012345678901234567890123456", 10).unwrap(),
+            s: BigInt::parse_bytes(b"9876543210987654321098765432109876543210987654321098765432109876543210987654", 10).unwrap(),
         };
         let public_key = Point3D {
-            x: BigInt::from_str("1234567890123456789012345678901234567890123456789012345678901234567890123456").unwrap(),
-            y: BigInt::from_str("9876543210987654321098765432109876543210987654321098765432109876543210987654").unwrap(),
+            x: BigInt::parse_bytes(b"1234567890123456789012345678901234567890123456789012345678901234567890123456", 10).unwrap(),
+            y: BigInt::parse_bytes(b"9876543210987654321098765432109876543210987654321098765432109876543210987654", 10).unwrap(),
             z: BigInt::zero(),
         };
         let curve = secp256r1();
-        assert!(!verify(&message_hash, sig, public_key, curve));
+        assert!(!verify(&message_hash, &sig, &public_key, &curve));
     }
-
-    #[pg_test]
-    fn test_ecdsa_verify() {
-        let public_key = hex::decode("7fa92dd0666eee7c13ddb7b6249b0c8f9fba4360857c4e15d2fc634a2b5a1f8fdb9983b319469d35e719a3b93e1ac292854cd3ff2ad50898681b0a32ffbcbc6a").unwrap();
-        let input_data = hex::decode("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763010000000117bd119a942a38b92bfc3b90a21f7eaa37fe1a7fa0abe27fd15dd20683b14d54").unwrap();
-        let signature = hex::decode("10fab01307f3eed59bc11601265efaab524b50d017bd9cdfeec4f61b01caa8d669c6e9f8d9bcbdba4e5478cb75b084332d51b0be2c21701b157c7c87abb98057").unwrap();
-        let hash_func = "sha256";
-        let curve_name = "secp256r1";
-
-        assert!(ecdsa_verify(&public_key, &input_data, &signature, hash_func, curve_name));
-    }
-
-    #[pg_test]
-    fn test_invalid_signature_ecdsa_verify() {
-        let public_key = hex::decode("7fa92dd0666eee7c13ddb7b6249b0c8f9fba4360857c4e15d2fc634a2b5a1f8fdb9983b319469d35e719a3b93e1ac292854cd3ff2ad50898681b0a32ffbcbc6a").unwrap();
-        let input_data = hex::decode("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763010000000117bd119a942a38b92bfc3b90a21f7eaa37fe1a7fa0abe27fd15dd20683b14d54").unwrap();
-        let signature = hex::decode("10fab01307f3eed59bc11601265efaab524b50d017bd9cdfeec4f61b01caa8d669c6e9f8d9bcbdba4e5478cb75b084332d51b0be2c21701b157c7c87abb98056").unwrap();
-        let hash_func = "sha256";
-        let curve_name = "secp256r1";
-
-        assert!(!ecdsa_verify(&public_key, &input_data, &signature, hash_func, curve_name));
-    } 
    
-}
-
-/// This module is required by `cargo pgrx test` invocations.
-/// It must be visible at the root of your extension crate.
-#[cfg(test)]
-pub mod pg_test {
-    pub fn setup(_options: Vec<&str>) {
-        // perform one-off initialization when the pg_test framework starts
-    }
-
-    pub fn postgresql_conf_options() -> Vec<&'static str> {
-        // return any postgresql.conf settings that are required for your tests
-        vec![]
-    }
 }

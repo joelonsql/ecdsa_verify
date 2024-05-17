@@ -1,176 +1,59 @@
-# ECDSA Verify: A PostgreSQL Extension for ECDSA Signature Verification
+# ECDSA Verify
 
 ![CI](https://github.com/joelonsql/ecdsa_verify/actions/workflows/ci.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/ecdsa_verify.svg)](https://crates.io/crates/ecdsa_verify)
 
-## Overview
-
-`ecdsa_verify` is a PostgreSQL extension for verifying ECDSA signatures,
-implemented in Rust. It leverages
-the [pgrx](https://github.com/pgcentralfoundation/pgrx) framework for creating
-PostgreSQL extensions in Rust, providing enhanced safety and performance
-compared to traditional C implementations.
-
-This extension aims to be a compatible drop-in replacement for the C-based
-[pg-ecdsa](https://github.com/ameensol/pg-ecdsa), with the same function
-signature for ease of integration.
+`ecdsa_verify` is a pure Rust crate for verifying ECDSA (Elliptic Curve Digital
+Signature Algorithm) signatures. This crate provides functions to handle
+elliptic curve operations and verify signatures against given message hashes
+and public keys.
 
 ## Features
 
-- **Compatibility**: Supports multiple PostgreSQL versions (11 to 16).
-- **Elliptic Curves**: Supports `secp256r1` and `secp256k1` curves.
-- **Hash Functions**: Supports SHA-256 for hashing input data.
-- **Performance**: Written in Rust for better safety and performance.
-- **Testing**: Comprehensive test suite to ensure reliability.
-- **Benchmarking**: Includes benchmarks to measure performance.
+- Supports the `secp256k1` and `secp256r1` elliptic curves.
+- Implements elliptic curve operations in Jacobian coordinates.
+- Provides a function to verify ECDSA signatures.
 
-## Getting Started
+## Installation
 
-### Prerequisites
+Add the following to your `Cargo.toml`:
 
-- [Rust](https://rustup.rs/)
-- [PostgreSQL](https://www.postgresql.org/download/linux/ubuntu/)
-- [pgrx](https://github.com/pgcentralfoundation/pgrx)
-
-Skip these steps if you've already installed these, or if you're on a different
-platform than Ubuntu/Debian in which case you should visit the links and
-follow the instructions for your platform.
-
-1. Install Rust:
-
-    [https://rustup.rs/](https://rustup.rs/)
-    ```sh
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    source $HOME/.cargo/env
-    ```
-
-2. Install latest PostgreSQL:
-
-    [https://www.postgresql.org/download/linux/ubuntu/](https://www.postgresql.org/download/linux/ubuntu/)
-    ```sh
-    sudo apt install -y postgresql-common
-    sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
-    sudo apt -y install postgresql
-    sudo -u postgres createuser --superuser "$USER"
-    createdb "$USER"
-    ```
-
-3. Install pgrx:
-
-    [https://github.com/pgcentralfoundation/pgrx/](https://github.com/pgcentralfoundation/pgrx/)
-    ```sh
-    sudo apt install -y libclang-dev build-essential libreadline-dev \
-        zlib1g-dev flex bison libxml2-dev libxslt-dev libssl-dev libxml2-utils \
-        xsltproc ccache pkg-config
-    cargo install --locked cargo-pgrx
-    cargo pgrx init
-    ```
-
-### Installation
-
-1. Clone the repository:
-
-    ```sh
-    git clone https://github.com/joelonsql/ecdsa_verify.git
-    cd ecdsa_verify
-    ```
-
-2. Build and test the extension:
-
-    ```sh
-    cargo pgrx test
-    ```
-
-3. Install the extension to PostgreSQL:
-
-    ```sh
-    cargo pgrx install --sudo
-    ```
+```toml
+[dependencies]
+ecdsa_verify = "1.1"
+```
 
 ## Usage
 
-### SQL Function
+```rust
+use ecdsa_verify::{verify, Point3D, EcdsaSignature, secp256r1};
+use num_bigint::BigInt;
+use num_traits::Zero;
 
-The extension provides a single SQL function `ecdsa_verify` to verify ECDSA signatures.
-
-#### Function Signature
-
-```sql
-\df ecdsa_verify
-List of functions
--[ RECORD 1 ]-------+-------------------------------------------------------------------------------------
-Schema              | public
-Name                | ecdsa_verify
-Result data type    | boolean
-Argument data types | public_key bytea, input_data bytea, signature bytea, hash_func text, curve_name text
-Type                | func
+fn main() {
+    let message_hash = hex::decode("48c08394455a5007945a9025c58be18f1795db8a6f8c12e70a00c1cdd6d3df78").unwrap();
+    let sig = EcdsaSignature {
+        r: BigInt::parse_bytes(b"7679932563960414347091205306595575529033945270189659289643076129390605281494", 10).unwrap(),
+        s: BigInt::parse_bytes(b"47844299635965077418200610260443789525430653377570372618360888620298576429143", 10).unwrap(),
+    };
+    let public_key = Point3D {
+        x: BigInt::parse_bytes(b"57742645121064378973436687487225580113493928349340781038880342836084265852815", 10).unwrap(),
+        y: BigInt::parse_bytes(b"99327750397910171089097863507426920114029443958399733106031194020330646322282", 10).unwrap(),
+        z: BigInt::zero(),
+    };
+    let curve = secp256r1();
+    let is_valid = verify(&message_hash, &sig, &public_key, &curve);
+    println!("Signature valid: {}", is_valid);
+}
 ```
 
-#### Example Usage
 
-```sh
-psql
-```
-
-```sql
-CREATE EXTENSION ecdsa_verify;
-
-SELECT ecdsa_verify(
-    public_key := '\x7fa92dd0666eee7c13ddb7b6249b0c8f9fba4360857c4e15d2fc634a2b5a1f8fdb9983b319469d35e719a3b93e1ac292854cd3ff2ad50898681b0a32ffbcbc6a'::bytea,
-    input_data := '\x49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763010000000117bd119a942a38b92bfc3b90a21f7eaa37fe1a7fa0abe27fd15dd20683b14d54'::bytea,
-    signature := '\x10fab01307f3eed59bc11601265efaab524b50d017bd9cdfeec4f61b01caa8d669c6e9f8d9bcbdba4e5478cb75b084332d51b0be2c21701b157c7c87abb98057'::bytea,
-    hash_func := 'sha256',
-    curve_name := 'secp256r1'
-);
-
- ecdsa_verify
---------------
- t
-(1 row)
-```
-
-### Supported Curves
-
-- `secp256r1`
-- `secp256k1`
-
-### Supported Hash Functions
-
-- `sha256`
-
-## Development
-
-### Project Structure
-
-```sh
-.
-├── Cargo.toml
-├── LICENSE
-├── benches
-│   └── ecdsa_verify.rs
-├── ecdsa_verify.control
-├── sql
-└── src
-    └── lib.rs
-```
-
-- **Cargo.toml**: Project metadata and dependencies.
-- **src/lib.rs**: Main implementation file.
-- **benches/ecdsa_verify.rs**: Benchmarking script.
-- **ecdsa_verify.control**: PostgreSQL extension control file.
-
-### Running Tests
-
-To run the tests, use the following command:
-
-```sh
-cargo pgrx test
-```
-
-### Benchmarking
+## Benchmarks
 
 To benchmark the extension, ensure you are using the Rust Nightly toolchain,
 then use the following command:
+
+To run the benchmarks, execute:
 
 ```sh
 cargo bench
@@ -185,7 +68,7 @@ $ cargo bench
 
      Running benches/ecdsa_verify.rs (target/release/deps/ecdsa_verify-f2c7ac91fb3e2e9c)
 
-test bench_ecdsa_verify ... bench:     839,281 ns/iter (+/- 12,977)
+test bench_verify ... bench:     864,913 ns/iter (+/- 13,821)
 ```
 
 ## License
@@ -194,8 +77,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Acknowledgements
 
-- Inspired by the [starkbank-ecdsa](https://github.com/starkbank/ecdsa-python) library.
-- Built using the [pgrx](https://github.com/pgcentralfoundation/pgrx) framework.
+- Based on v2.2.0 of the [starkbank-ecdsa](https://github.com/starkbank/ecdsa-python/commit/9acdc661b7acde453b9bd6b20c57b88d5a3bf7e3) Python library by Star Bank.
 
 ## Contributing
 
