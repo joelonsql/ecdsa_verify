@@ -1,4 +1,4 @@
-# ECDSA Verify
+# `ecdsa_verify`: Rust crate for ECDSA Signature Verification
 
 ![CI](https://github.com/joelonsql/ecdsa_verify/actions/workflows/ci.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/ecdsa_verify.svg)](https://crates.io/crates/ecdsa_verify)
@@ -7,6 +7,20 @@
 Signature Algorithm) signatures. This crate provides functions to handle
 elliptic curve operations and verify signatures against given message hashes
 and public keys.
+
+## Why Only Verification?
+
+By limiting the scope to verification, the extension remains simpler and easier
+to implement and audit. Since verification only involves public keys and no
+private keys, it is inherently secure against side-channel attacks and much
+easier to implement correctly than the signature generation algorithm.
+
+The typical use case would be a client needing to authenticate against a server
+where only the public keys are stored on the server. In this scenario, only
+the signature verification algorithm is needed on the server side.
+
+This is why the `ecdsa_verify` crate only implements the ECDSA signature
+verification algorithm.
 
 ## Features
 
