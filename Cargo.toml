@@ -1,6 +1,6 @@
 [package]
 name = "ecdsa_verify"
-version = "1.1.1"
+version = "1.1.2"
 authors = ["Joel Jakobsson <github@compiler.org>"]
 edition = "2021"
 description = "ECDSA signature verification."
@@ -16,6 +16,16 @@ num-bigint = "0.4"
 num-traits = "0.2"
 hex = "0.4"
 sha2 = "0.10"
+
+[dev-dependencies]
+# Dependencies for tests - automatically available during testing
+k256 = { version = "0.13", features = ["ecdsa"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+rand = { version = "0.8" }
+
+[features]
+# Enable advanced tests with real key generation
+advanced-tests = []
 
 [[bench]]
 name = "verify"

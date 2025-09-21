@@ -62,6 +62,37 @@ fn main() {
 ```
 
 
+## Testing
+
+### Basic Tests
+
+Run the standard test suite:
+
+```sh
+cargo test
+```
+
+### Advanced Tests (Optional)
+
+The crate includes advanced tests that use real cryptographic libraries to generate
+key pairs and test comprehensive scenarios including bit-flipping negative tests.
+These tests require additional dependencies and are disabled by default.
+
+To run the advanced tests:
+
+```sh
+cargo test --features advanced-tests
+```
+
+The advanced tests include:
+- Real key pair generation using `k256` (secp256k1) and `p256` (secp256r1) crates
+- Positive tests verifying signatures from real implementations
+- Negative tests with single-bit flips in:
+  - Message hash
+  - Public key coordinates (x, y)
+  - Signature components (r, s)
+- Edge case testing with various message sizes
+
 ## Benchmarks
 
 To benchmark the extension, ensure you are using the Rust Nightly toolchain,
